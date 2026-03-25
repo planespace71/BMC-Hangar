@@ -1391,21 +1391,42 @@ function saveDraft() {
   const drafts = getDrafts();
   drafts.unshift(draft);
   saveDrafts(drafts);
+  syncDraftsToCloud();
 
   alert('Draft saved: ' + label);
 }
 
+let cloudDrafts = [];
+
 function showDrafts() {
-  const drafts = getDrafts();
+  loadCloudDraftsThenRender();
+  showScreen('drafts');
+}
+
+function renderDraftsList() {
+  const localDrafts = getDrafts().map(d => ({ ...d, source: 'local' }));
+  const cloud = cloudDrafts.map(d => ({ ...d, source: 'cloud' }));
+
+  // Merge: deduplicate by id, prefer local version
+  const seen = new Set();
+  const merged = [];
+  [...localDrafts, ...cloud].forEach(d => {
+    if (!seen.has(d.id)) {
+      seen.add(d.id);
+      merged.push(d);
+    }
+  });
+
   const container = document.getElementById('drafts-list');
 
-  if (!drafts.length) {
+  if (!merged.length) {
     container.innerHTML = '<div class="empty-state">No saved drafts.<br>Save your progress from the checklist screen.</div>';
   } else {
-    container.innerHTML = drafts.map(d => {
+    container.innerHTML = merged.map(d => {
+      const cloudBadge = d.source === 'cloud' && !getDrafts().find(l => l.id === d.id) ? ' <span style="font-size:10px;color:var(--success);">&#9729; Drive</span>' : '';
       return `<div class="draft-card">
         <div class="draft-info">
-          <h4>${d.label}</h4>
+          <h4>${d.label}${cloudBadge}</h4>
           <span>${d.count}/${AIRCRAFT.length} aircraft &middot; ${d.aircraft}</span>
         </div>
         <div class="draft-actions">
@@ -1415,13 +1436,12 @@ function showDrafts() {
       </div>`;
     }).join('');
   }
-
-  showScreen('drafts');
 }
 
 function resumeDraft(id) {
-  const drafts = getDrafts();
-  const draft = drafts.find(d => d.id === id);
+  let draft = getDrafts().find(d => d.id === id);
+  // Check cloud drafts if not found locally
+  if (!draft) draft = cloudDrafts.find(d => d.id === id);
   if (!draft) return;
 
   if (Object.keys(sessionData).length > 0) {
@@ -1437,7 +1457,9 @@ function deleteDraft(id) {
   if (!confirm('Delete this draft?')) return;
   const drafts = getDrafts().filter(d => d.id !== id);
   saveDrafts(drafts);
-  showDrafts();
+  cloudDrafts = cloudDrafts.filter(d => d.id !== id);
+  syncDraftsToCloud();
+  renderDraftsList();
 }
 
 // --- Google Drive Integration ---
@@ -1734,6 +1756,103 @@ async function loadCloudReportsThenRender() {
     cloudReports = reports;
     renderSavedReports(); // Re-render with cloud data merged in
   } catch(e) { console.error('Failed to load cloud reports', e); }
+}
+
+// --- Cloud Drafts (drafts_index.json in Drive) ---
+let cloudDraftsFileId = null;
+
+async function findCloudDraftsFile() {
+  if (!gdriveAccessToken || !gdriveFolderId) return null;
+  try {
+    const q = encodeURIComponent("name='drafts_index.json' and '" + gdriveFolderId + "' in parents and trashed=false");
+    const r = await fetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)', {
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+    const data = await r.json();
+    if (data.files && data.files.length > 0) {
+      cloudDraftsFileId = data.files[0].id;
+      return cloudDraftsFileId;
+    }
+  } catch(_) {}
+  return null;
+}
+
+async function readCloudDrafts() {
+  if (!gdriveAccessToken) return [];
+  try {
+    if (!gdriveFolderId) await ensureGDriveFolder();
+    if (!cloudDraftsFileId) await findCloudDraftsFile();
+    if (!cloudDraftsFileId) return [];
+    const r = await fetch('https://www.googleapis.com/drive/v3/files/' + cloudDraftsFileId + '?alt=media', {
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  } catch(_) { return []; }
+}
+
+async function writeCloudDrafts(drafts) {
+  if (!gdriveAccessToken || !gdriveFolderId) return;
+  const jsonBlob = new Blob([JSON.stringify(drafts, null, 2)], { type: 'application/json' });
+
+  if (cloudDraftsFileId) {
+    await fetch('https://www.googleapis.com/upload/drive/v3/files/' + cloudDraftsFileId + '?uploadType=media', {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer ' + gdriveAccessToken,
+        'Content-Type': 'application/json'
+      },
+      body: jsonBlob
+    });
+  } else {
+    const metadata = { name: 'drafts_index.json', parents: [gdriveFolderId], mimeType: 'application/json' };
+    const boundary = 'dft_boundary_' + Date.now();
+    const delimiter = '\r\n--' + boundary + '\r\n';
+    const closeDelimiter = '\r\n--' + boundary + '--';
+    const bodyText = delimiter + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata) +
+      delimiter + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(drafts, null, 2) + closeDelimiter;
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + gdriveAccessToken,
+        'Content-Type': 'multipart/related; boundary=' + boundary
+      },
+      body: bodyText
+    });
+    const result = await r.json();
+    cloudDraftsFileId = result.id;
+  }
+}
+
+async function syncDraftsToCloud() {
+  if (!gdriveAccessToken) return;
+  try {
+    if (!gdriveFolderId) await ensureGDriveFolder();
+    // Merge local drafts with cloud drafts
+    const local = getDrafts();
+    const cloud = await readCloudDrafts();
+    const seen = new Set();
+    const merged = [];
+    [...local, ...cloud].forEach(d => {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        merged.push(d);
+      }
+    });
+    await writeCloudDrafts(merged);
+  } catch(e) { console.error('Failed to sync drafts to cloud', e); }
+}
+
+async function loadCloudDraftsThenRender() {
+  renderDraftsList(); // Render local data immediately
+  if (!gdriveAccessToken) return;
+  try {
+    if (!gdriveFolderId) await ensureGDriveFolder();
+    const drafts = await readCloudDrafts();
+    cloudDrafts = drafts;
+    renderDraftsList(); // Re-render with cloud data merged in
+  } catch(e) { console.error('Failed to load cloud drafts', e); }
 }
 
 // Init
