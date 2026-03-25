@@ -566,7 +566,7 @@ function qtyFieldHTML(id, label) {
       <div class="field-unit">e.g. 7/8, 0.875, 87%, 88</div>
     </div>
     <div class="qty-input">
-      <input type="text" id="${id}" inputmode="decimal" autocomplete="off" oninput="liveUpdateQty('${id}')">
+      <input type="text" id="${id}" inputmode="text" autocomplete="off" oninput="liveUpdateQty('${id}')">
       <span class="qty-pct" id="${id}-pct">&mdash;</span>
     </div>
   </div>`;
