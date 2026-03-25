@@ -1040,17 +1040,18 @@ function exportFullPDF() {
   const history = getHistory();
   if (!history.length) { alert('No data to export.'); return; }
   // If called right after saving, only export that inspection's entries
+  const now = new Date();
+  const dateTitle = now.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' })
+    + ' at ' + now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
   if (lastExportSessionId) {
     const sessionEntries = history.filter(e => e.sessionId === lastExportSessionId);
     if (sessionEntries.length) {
-      const acNames = [...new Set(sessionEntries.map(e => e.aircraft))];
-      const title = acNames.length === AIRCRAFT.length ? 'All Aircraft' : acNames.join(', ');
-      generatePDF(title, sessionEntries);
+      generatePDF(dateTitle, sessionEntries);
       lastExportSessionId = null;
       return;
     }
   }
-  generatePDF('All Aircraft', history);
+  generatePDF(dateTitle, history);
 }
 
 function exportPDFAll() {
@@ -1058,7 +1059,10 @@ function exportPDFAll() {
   if (!history.length) { alert('No data to export.'); return; }
   const filtered = currentFilter === 'all' ? history : history.filter(e => e.aircraft === currentFilter);
   if (!filtered.length) { alert('No data for this filter.'); return; }
-  generatePDF(currentFilter === 'all' ? 'All Aircraft' : currentFilter, filtered);
+  const now = new Date();
+  const dateTitle = now.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' })
+    + ' at ' + now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+  generatePDF(currentFilter === 'all' ? dateTitle : currentFilter + ' — ' + dateTitle, filtered);
 }
 
 function generatePDF(title, entries) {
