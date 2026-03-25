@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>BMC Hangar</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --accent: #3b82f6;
+    --accent-dim: #2563eb;
+    --text: #e4e4e7;
+    --text-dim: #71717a;
+    --border: #27272a;
+    --success: #22c55e;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100dvh;
+    padding: 0 0 env(safe-area-inset-bottom);
+    overflow-x: hidden;
+  }
+  .screen { display: none; min-height: 100dvh; padding: 20px 16px 40px; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  header { text-align: center; padding: 16px 0 8px; }
+  header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  header p { color: var(--text-dim); font-size: 14px; margin-top: 4px; }
+
+  .submit-btn {
+    width: 100%; padding: 16px; background: var(--accent); color: #fff;
+    border: none; border-radius: var(--radius); font-size: 17px; font-weight: 600;
+    cursor: pointer; margin-top: 10px; transition: background 0.15s;
+  }
+  .submit-btn:active { background: var(--accent-dim); }
+  .submit-btn:disabled { background: #262626; color: #555; pointer-events: none; }
+
+  .btn-outline {
+    width: 100%; padding: 14px; background: transparent; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: var(--radius);
+    font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+
+  /* Checklist */
+  .checklist { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+  .checklist-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 16px; display: flex; align-items: center; gap: 14px; cursor: pointer;
+    transition: all 0.15s; user-select: none; -webkit-user-select: none;
+  }
+  .checklist-card:active { transform: scale(0.98); background: #22253a; }
+  .checklist-card.done { border-color: var(--success); }
+  .check-circle {
+    width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0; color: transparent; transition: all 0.2s;
+  }
+  .checklist-card.done .check-circle { border-color: var(--success); background: var(--success); color: #fff; }
+  .ac-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .ac-icon.m2 { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+  .ac-icon.pc12 { background: linear-gradient(135deg, #22c55e, #15803d); }
+  .ac-icon.tbm { background: linear-gradient(135deg, #f59e0b, #d97706); }
+  .card-info h3 { font-size: 17px; font-weight: 600; }
+  .card-info span { color: var(--text-dim); font-size: 13px; }
+  .card-info .done-hint { color: var(--success); font-size: 12px; font-weight: 500; }
+  .card-arrow { margin-left: auto; color: var(--text-dim); font-size: 20px; }
+  .status-bar { text-align: center; padding: 12px 0 4px; color: var(--text-dim); font-size: 13px; }
+  .status-bar strong { color: var(--text); }
+
+  /* Form */
+  .form-header { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+  .back-btn {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    width: 40px; height: 40px; border-radius: 10px; font-size: 20px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .form-header h2 { font-size: 22px; font-weight: 700; }
+  .form-section {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 14px;
+  }
+  .form-section h3 {
+    font-size: 13px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px;
+  }
+  .field-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .field-row:last-child { margin-bottom: 0; }
+  .field-label { font-size: 15px; font-weight: 500; }
+  .field-unit { color: var(--text-dim); font-size: 12px; font-weight: 400; }
+  .qty-input { display: flex; align-items: center; gap: 8px; }
+  .qty-input input {
+    width: 80px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 16px; padding: 8px 10px; text-align: center; font-weight: 600;
+  }
+  .qty-input input:focus { border-color: var(--accent); outline: none; }
+  .qty-pct { font-size: 14px; font-weight: 600; min-width: 48px; text-align: right; }
+  .psi-input input {
+    width: 80px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 16px; padding: 8px 10px; text-align: center; font-weight: 600;
+  }
+  .psi-input input:focus { border-color: var(--accent); outline: none; }
+  .timestamp { text-align: center; color: var(--text-dim); font-size: 13px; padding: 4px 0 8px; }
+
+  /* Review */
+  .review-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 12px;
+  }
+  .review-card h3 { font-size: 17px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot.m2 { background: #3b82f6; } .dot.pc12 { background: #22c55e; } .dot.tbm { background: #f59e0b; }
+  .review-row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
+  .review-row .label { color: var(--text-dim); }
+  .review-row .value { font-weight: 600; }
+
+  /* Success */
+  .success-screen { text-align: center; justify-content: center; align-items: center; gap: 16px; }
+  .success-icon { width: 80px; height: 80px; border-radius: 50%; background: rgba(34,197,94,0.15); display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto; }
+  .success-screen h2 { font-size: 24px; font-weight: 700; }
+  .success-screen p { color: var(--text-dim); font-size: 15px; }
+  .btn-group { display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 12px; }
+
+  /* History */
+  .history-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; flex: 1; }
+  .history-entry { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .history-date { font-size: 13px; color: var(--text-dim); }
+  .history-summary { font-size: 15px; font-weight: 500; margin-top: 4px; }
+  .history-values { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+  .empty-state { text-align: center; color: var(--text-dim); padding: 60px 20px; font-size: 15px; }
+  .filter-btn {
+    background: var(--card); border: 1px solid var(--border); color: var(--text-dim);
+    padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* Drafts */
+  .draft-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px;
+  }
+  .draft-card:active { background: #22253a; }
+  .draft-info { flex: 1; }
+  .draft-info h4 { font-size: 15px; font-weight: 600; }
+  .draft-info span { font-size: 12px; color: var(--text-dim); }
+  .draft-actions { display: flex; gap: 8px; }
+  .draft-actions button {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .draft-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .draft-actions button.danger { color: var(--danger); border-color: var(--danger); }
+
+  .color-good { color: var(--success); }
+  .color-warn { color: var(--warn); }
+  .color-danger { color: var(--danger); }
+
+  /* Live Report */
+  .report-aircraft { margin-bottom: 16px; }
+  .report-aircraft-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  .report-aircraft-header .dot-lg {
+    width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  }
+  .report-aircraft-header h3 { font-size: 17px; font-weight: 700; }
+  .report-aircraft-header .badge {
+    margin-left: auto; font-size: 11px; font-weight: 600; padding: 3px 10px;
+    border-radius: 20px;
+  }
+  .badge-done { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge-pending { background: rgba(113,113,122,0.15); color: var(--text-dim); }
+
+  .report-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .report-metric {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; text-align: center;
+  }
+  .report-metric.wide { grid-column: 1 / -1; }
+  .report-metric-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; }
+  .report-metric-value { font-size: 22px; font-weight: 700; }
+  .report-metric-value.sm { font-size: 17px; }
+  .report-metric-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .report-pending-msg {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 24px; text-align: center; color: var(--text-dim); font-size: 14px;
+  }
+
+  /* Floating report button */
+  .fab-report {
+    position: fixed; bottom: 20px; right: 16px;
+    background: var(--accent); color: #fff; border: none;
+    width: 56px; height: 56px; border-radius: 50%;
+    font-size: 22px; cursor: pointer; z-index: 200;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.4);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s, opacity 0.15s;
+  }
+  .fab-report:active { transform: scale(0.92); }
+  .fab-report.hidden { display: none; }
+  .fab-badge {
+    position: absolute; top: -2px; right: -2px;
+    background: var(--success); color: #fff; font-size: 11px; font-weight: 700;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--bg);
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+
+  /* Google Drive */
+  .gdrive-btn {
+    display: flex; align-items: center; gap: 8px; justify-content: center;
+    width: 100%; padding: 12px; margin-bottom: 12px;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .gdrive-btn:active { transform: scale(0.98); }
+  .gdrive-btn.connected { border-color: var(--success); }
+  .gdrive-btn .gdrive-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim);
+  }
+  .gdrive-btn.connected .gdrive-dot { background: var(--success); }
+  .gdrive-upload-status {
+    text-align: center; font-size: 12px; padding: 6px 0;
+    color: var(--text-dim); display: none;
+  }
+  .gdrive-upload-status.uploading { display: block; color: var(--accent); }
+  .gdrive-upload-status.success { display: block; color: var(--success); }
+  .gdrive-upload-status.error { display: block; color: var(--danger); }
+</style>
+</head>
+<body>
+
+<!-- SCREEN: Home / Checklist -->
+<div id="screen-home" class="screen active">
+  <header>
+    <h1>BMC Hangar</h1>
+    <p>Aircraft Inspection Tracker</p>
+  </header>
+  <button class="gdrive-btn" id="gdrive-btn" onclick="handleGDriveClick()">
+    <span class="gdrive-dot"></span>
+    <span id="gdrive-label">Connect Google Drive</span>
+  </button>
+  <div class="gdrive-upload-status" id="gdrive-status"></div>
+  <div class="status-bar" id="status-bar">Tap an aircraft to begin</div>
+  <div class="checklist" id="checklist"></div>
+  <div style="margin-top:auto; padding-top:16px;">
+    <button class="submit-btn" id="review-all-btn" disabled onclick="showReview()">Review &amp; Save</button>
+    <button class="btn-outline" style="margin-top:10px;" id="save-draft-btn" onclick="saveDraft()">Save Draft for Later</button>
+    <button class="btn-outline" style="margin-top:10px;" onclick="showDrafts()">Saved Drafts</button>
+    <button class="btn-outline" style="margin-top:10px;" onclick="showHistory()">View History &amp; Reports</button>
+    <button class="btn-outline" style="margin-top:10px; color:var(--danger); border-color:var(--danger);" id="reset-btn" onclick="resetSession()">Reset Inspection</button>
+  </div>
+</div>
+
+<!-- SCREEN: Data Entry (dynamically populated) -->
+<div id="screen-entry" class="screen">
+  <div class="form-header">
+    <button class="back-btn" onclick="goHome()">&larr;</button>
+    <h2 id="entry-title"></h2>
+  </div>
+  <div class="timestamp" id="entry-timestamp"></div>
+  <div id="entry-form-fields"></div>
+  <button class="submit-btn" onclick="saveAircraft()">Save &amp; Return to Checklist</button>
+</div>
+
+<!-- SCREEN: Review All -->
+<div id="screen-review" class="screen">
+  <header>
+    <h1 style="font-size:22px;">Review Inspection</h1>
+    <p id="review-timestamp"></p>
+  </header>
+  <div id="review-cards"></div>
+  <div style="margin-top:auto; padding-top:12px;">
+    <button class="submit-btn" onclick="saveAllAndExport()">Save All &amp; Generate Report</button>
+    <button class="btn-outline" style="margin-top:10px;" onclick="goHome()">Back to Checklist</button>
+  </div>
+</div>
+
+<!-- SCREEN: Success -->
+<div id="screen-success" class="screen success-screen">
+  <div class="success-icon">&#10003;</div>
+  <h2>Inspection Saved</h2>
+  <p id="success-msg">All aircraft recorded successfully.</p>
+  <div class="btn-group">
+    <button class="submit-btn" onclick="exportFullPDF()">Export PDF Report</button>
+    <button class="btn-outline" onclick="newInspection()">New Inspection</button>
+  </div>
+</div>
+
+<!-- SCREEN: History -->
+<div id="screen-history" class="screen">
+  <div class="form-header">
+    <button class="back-btn" onclick="goHome()">&larr;</button>
+    <h2>History</h2>
+  </div>
+  <!-- Tabs -->
+  <div style="display:flex;gap:0;margin-bottom:14px;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
+    <button class="history-tab active" id="tab-reports" onclick="switchHistoryTab('reports')" style="flex:1;padding:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;background:var(--accent);color:#fff;">Past Reports</button>
+    <button class="history-tab" id="tab-data" onclick="switchHistoryTab('data')" style="flex:1;padding:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;background:var(--card);color:var(--text-dim);">Inspection Data</button>
+  </div>
+  <!-- Reports list -->
+  <div id="reports-container" class="history-list"></div>
+  <!-- Data list (hidden by default) -->
+  <div id="data-container" class="history-list" style="display:none;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <button class="filter-btn active" onclick="filterHistory('all')">All</button>
+      <button class="filter-btn" onclick="filterHistory('Citation M2')">M2</button>
+      <button class="filter-btn" onclick="filterHistory('PC-12')">PC-12</button>
+      <button class="filter-btn" onclick="filterHistory('TBM-900')">TBM-900</button>
+    </div>
+    <div id="history-entries"></div>
+  </div>
+  <button class="submit-btn" style="margin-top:auto;" onclick="exportPDFAll()">Export Full Report PDF</button>
+  <button class="btn-outline" style="margin-top:10px;color:var(--danger);border-color:var(--danger);" onclick="clearAllData()">Clear All Data</button>
+</div>
+
+<!-- SCREEN: Saved Drafts -->
+<div id="screen-drafts" class="screen">
+  <div class="form-header">
+    <button class="back-btn" onclick="goHome()">&larr;</button>
+    <h2>Saved Drafts</h2>
+  </div>
+  <p style="color:var(--text-dim);font-size:13px;margin-bottom:12px;">Resume an in-progress inspection</p>
+  <div id="drafts-list"></div>
+</div>
+
+<!-- SCREEN: Live Report -->
+<div id="screen-report" class="screen">
+  <div class="form-header">
+    <button class="back-btn" onclick="goHome()">&larr;</button>
+    <h2>Live Report</h2>
+  </div>
+  <div class="timestamp" id="report-timestamp"></div>
+  <div id="report-content"></div>
+  <div style="margin-top:auto; padding-top:12px;">
+    <button class="submit-btn" id="report-save-btn" disabled onclick="showReview()">Review &amp; Save</button>
+    <button class="btn-outline" style="margin-top:10px;" onclick="goHome()">Back to Checklist</button>
+  </div>
+</div>
+
+<!-- Floating report button -->
+<button class="fab-report hidden" id="fab-report" onclick="showLiveReport()">
+  &#9993;
+  <span class="fab-badge" id="fab-badge">0</span>
+</button>
+
+<script>
+const { jsPDF } = window.jspdf;
+
+const AIRCRAFT = [
+  { name: 'Citation M2', css: 'm2', sub: 'Cessna Light Jet', tail: 'N68CH', twinEngine: true,
+    tireRange: { nose:[90,100], left:[124,136], right:[124,136] }, o2Range: { min:1000, full:1800 } },
+  { name: 'PC-12', css: 'pc12', sub: 'Pilatus Turboprop', tail: 'N29BY', twinEngine: false,
+    tireRange: { nose:[55,61], left:[64,72], right:[64,72] }, o2Range: { min:1000, full:1850 } },
+  { name: 'TBM-900', css: 'tbm', sub: 'Daher Turboprop', tail: 'N69CV', twinEngine: false,
+    tireRange: { nose:[55,62], left:[83,91], right:[83,91] }, o2Range: { min:900, full:1800 } }
+];
+
+let sessionData = {};
+let currentAircraftIndex = -1;
+let currentFilter = 'all';
+let editingGroupKey = null; // set when editing a whole inspection group
+let editingGroupSessionId = null; // original sessionId of group being edited
+
+function getHistory() { return JSON.parse(localStorage.getItem('bmc_hangar_data') || '[]'); }
+function saveHistory(data) { localStorage.setItem('bmc_hangar_data', JSON.stringify(data)); }
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function goHome() { renderChecklist(); showScreen('home'); }
+function newInspection() { sessionData = {}; editingGroupKey = null; editingGroupSessionId = null; autoSave(); renderChecklist(); showScreen('home'); }
+function resetSession() {
+  if (!Object.keys(sessionData).length) return;
+  if (!confirm('Clear all entered data for this inspection?')) return;
+  sessionData = {}; editingGroupKey = null; editingGroupSessionId = null; autoSave(); renderChecklist();
+}
+
+// --- Checklist ---
+function renderChecklist() {
+  const container = document.getElementById('checklist');
+  const doneCount = Object.keys(sessionData).length;
+
+  container.innerHTML = AIRCRAFT.map((ac, i) => {
+    const done = !!sessionData[ac.name];
+    let hint = `${ac.tail} &middot; ${ac.sub}`;
+    if (done) {
+      const e = sessionData[ac.name];
+      if (ac.twinEngine) {
+        hint = `<span class="done-hint">E1 Oil ${fmt(e.oil1.pct,'%')} &middot; E2 Oil ${fmt(e.oil2.pct,'%')} &middot; Tap to edit</span>`;
+      } else {
+        hint = `<span class="done-hint">Oil ${fmt(e.oil.pct,'%')} &middot; Hyd ${fmt(e.hydraulic.pct,'%')} &middot; Tap to edit</span>`;
+      }
+    }
+    return `<div class="checklist-card ${done ? 'done' : ''}" onclick="openAircraft(${i})">
+      <div class="check-circle">${done ? '&#10003;' : ''}</div>
+      <div class="ac-icon ${ac.css}">&#9992;</div>
+      <div class="card-info">
+        <h3>${ac.name}</h3>
+        <span>${hint}</span>
+      </div>
+      <div class="card-arrow">&rsaquo;</div>
+    </div>`;
+  }).join('');
+
+  const status = document.getElementById('status-bar');
+  const editLabel = editingGroupKey ? '<span style="color:var(--warn);">Editing inspection</span> &mdash; ' : '';
+  if (doneCount === 0) status.innerHTML = editLabel + 'Tap an aircraft to begin';
+  else if (doneCount < AIRCRAFT.length) status.innerHTML = editLabel + `<strong>${doneCount}/${AIRCRAFT.length}</strong> aircraft complete`;
+  else status.innerHTML = editLabel + `<strong>All aircraft complete</strong> &mdash; ready to save`;
+
+  document.getElementById('review-all-btn').disabled = doneCount === 0;
+  document.getElementById('reset-btn').style.display = doneCount > 0 ? '' : 'none';
+  document.getElementById('save-draft-btn').style.display = doneCount > 0 ? '' : 'none';
+
+  // FAB
+  const fab = document.getElementById('fab-report');
+  const fabBadge = document.getElementById('fab-badge');
+  if (doneCount > 0) {
+    fab.classList.remove('hidden');
+    fabBadge.textContent = doneCount;
+  } else {
+    fab.classList.add('hidden');
+  }
+}
+
+// --- Parse quantity input ---
+// Accepts: "7/8", "0.875", "87.5%", "88", "87.5"
+// Returns percentage (0-100) or NaN
+function parseQty(raw) {
+  if (!raw || !raw.trim()) return NaN;
+  let s = raw.trim();
+  // Fraction: "7/8"
+  if (s.includes('/')) {
+    const parts = s.split('/');
+    const num = parseFloat(parts[0]);
+    const den = parseFloat(parts[1]);
+    if (isNaN(num) || isNaN(den) || den === 0) return NaN;
+    return Math.round((num / den) * 100);
+  }
+  // Percentage: "87.5%" or "88%"
+  if (s.endsWith('%')) {
+    const val = parseFloat(s.slice(0, -1));
+    return isNaN(val) ? NaN : Math.round(val);
+  }
+  // Plain number
+  const val = parseFloat(s);
+  if (isNaN(val)) return NaN;
+  // If <= 1, treat as decimal (0.875 -> 88%)
+  // If > 1, treat as percentage already (88 -> 88%)
+  return val <= 1 ? Math.round(val * 100) : Math.round(val);
+}
+
+function liveUpdateQty(id) {
+  const input = document.getElementById(id);
+  const badge = document.getElementById(id + '-pct');
+  const pct = parseQty(input.value);
+  if (!isNaN(pct)) {
+    badge.textContent = pct + '%';
+    badge.className = 'qty-pct ' + (pct >= 75 ? 'color-good' : pct >= 50 ? 'color-warn' : 'color-danger');
+  } else {
+    badge.textContent = '\u2014';
+    badge.className = 'qty-pct';
+  }
+}
+
+function updateTireStatus() {
+  const ac = AIRCRAFT[currentAircraftIndex];
+  if (!ac) return;
+  const tr = ac.tireRange;
+  ['nose','left','right'].forEach(key => {
+    const val = parseFloat(document.getElementById('tire-' + key).value);
+    const range = tr[key];
+    const el = document.getElementById('tire-' + key + '-status');
+    if (!el) return;
+    const s = tireStatus(val, range[0], range[1]);
+    el.textContent = s.label;
+    el.className = s.cls;
+  });
+}
+
+function updateO2Status() {
+  const ac = AIRCRAFT[currentAircraftIndex];
+  if (!ac) return;
+  const val = parseFloat(document.getElementById('emer-o2').value);
+  const el = document.getElementById('emer-o2-status');
+  if (!el) return;
+  const s = o2Status(val, ac.o2Range.min, ac.o2Range.full);
+  el.textContent = s.label;
+  el.className = s.cls;
+}
+
+let pendingImages = []; // base64 strings for current aircraft
+
+function handlePhotos(input) {
+  const files = Array.from(input.files);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      pendingImages.push(ev.target.result);
+      renderPhotoPreview();
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';
+}
+
+function removePhoto(index) {
+  pendingImages.splice(index, 1);
+  renderPhotoPreview();
+}
+
+function renderPhotoPreview() {
+  const container = document.getElementById('photo-preview');
+  if (!container) return;
+  container.innerHTML = pendingImages.map((src, i) =>
+    `<div style="position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+      <img src="${src}" style="width:100%;height:100%;object-fit:cover;">
+      <button onclick="removePhoto(${i})" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.7);
+        color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;cursor:pointer;
+        display:flex;align-items:center;justify-content:center;">&times;</button>
+    </div>`
+  ).join('');
+}
+
+// --- Dynamic Form ---
+function tireStatus(val, min, max) {
+  if (isNaN(val)) return { cls: '', label: '' };
+  if (val < min) return { cls: 'color-danger', label: 'LOW' };
+  if (val > max) return { cls: 'color-warn', label: 'HIGH' };
+  return { cls: 'color-good', label: 'OK' };
+}
+
+function tireRangeLabel(min, max) {
+  return `${min}–${max} PSI`;
+}
+
+function o2Status(val, min, full) {
+  if (isNaN(val)) return { cls: '', label: '' };
+  if (val < min) return { cls: 'color-danger', label: 'BELOW MIN' };
+  if (val >= full * 0.9) return { cls: 'color-good', label: 'GOOD' };
+  return { cls: 'color-warn', label: 'OK' };
+}
+
+function qtyFieldHTML(id, label) {
+  return `<div class="field-row">
+    <div>
+      <div class="field-label">${label}</div>
+      <div class="field-unit">e.g. 7/8, 0.875, 87%, 88</div>
+    </div>
+    <div class="qty-input">
+      <input type="text" id="${id}" inputmode="decimal" autocomplete="off" oninput="liveUpdateQty('${id}')">
+      <span class="qty-pct" id="${id}-pct">&mdash;</span>
+    </div>
+  </div>`;
+}
+
+function buildFormHTML(ac) {
+  let html = '';
+
+  const sightNote = `<div style="font-size:11px;color:var(--text-dim);font-style:italic;margin-top:4px;">* Sight gauge reading — not precisely accurate.</div>`;
+
+  if (ac.twinEngine) {
+    html += `<div class="form-section"><h3>Engine 1 — Oil</h3>${qtyFieldHTML('oil1', 'Oil Quantity')}${sightNote}</div>`;
+    html += `<div class="form-section"><h3>Engine 2 — Oil</h3>${qtyFieldHTML('oil2', 'Oil Quantity')}${sightNote}</div>`;
+    html += `<div class="form-section"><h3>Hydraulic</h3>${qtyFieldHTML('hyd', 'Hydraulic Qty')}${sightNote}</div>`;
+  } else {
+    html += `<div class="form-section"><h3>Fluid Levels</h3>
+      ${qtyFieldHTML('oil', 'Oil Quantity')}
+      ${qtyFieldHTML('hyd', 'Hydraulic Qty')}
+      ${sightNote}
+    </div>`;
+  }
+
+  const tr = ac.tireRange;
+  html += `<div class="form-section">
+    <h3>Tire Pressures</h3>
+    <div class="field-row">
+      <div>
+        <div class="field-label">Nose</div>
+        <div class="field-unit">Range: ${tr.nose[0]}–${tr.nose[1]} PSI</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="psi-input"><input type="number" id="tire-nose" inputmode="decimal" step="0.1" oninput="updateTireStatus()"></div>
+        <span id="tire-nose-status" style="font-size:12px;font-weight:600;min-width:32px;"></span>
+      </div>
+    </div>
+    <div class="field-row">
+      <div>
+        <div class="field-label">Left Main</div>
+        <div class="field-unit">Range: ${tr.left[0]}–${tr.left[1]} PSI</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="psi-input"><input type="number" id="tire-left" inputmode="decimal" step="0.1" oninput="updateTireStatus()"></div>
+        <span id="tire-left-status" style="font-size:12px;font-weight:600;min-width:32px;"></span>
+      </div>
+    </div>
+    <div class="field-row">
+      <div>
+        <div class="field-label">Right Main</div>
+        <div class="field-unit">Range: ${tr.right[0]}–${tr.right[1]} PSI</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="psi-input"><input type="number" id="tire-right" inputmode="decimal" step="0.1" oninput="updateTireStatus()"></div>
+        <span id="tire-right-status" style="font-size:12px;font-weight:600;min-width:32px;"></span>
+      </div>
+    </div>
+  </div>`;
+
+  const o2r = ac.o2Range;
+  html += `<div class="form-section">
+    <h3>Emergency Systems</h3>
+    <div class="field-row">
+      <div>
+        <div class="field-label">EMERG O2</div>
+        <div class="field-unit">Min: ${o2r.min} PSI &middot; Full: ~${o2r.full} PSI</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="psi-input"><input type="number" id="emer-o2" inputmode="decimal" step="1" oninput="updateO2Status()"></div>
+        <span id="emer-o2-status" style="font-size:12px;font-weight:600;min-width:50px;"></span>
+      </div>
+    </div>
+  </div>`;
+
+  html += `<div class="form-section">
+    <h3>Comments &amp; Photos</h3>
+    <textarea id="comments" rows="3" placeholder="Notes, squawks, observations..."
+      style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+      color:var(--text);font-size:15px;padding:10px;font-family:inherit;resize:vertical;margin-bottom:12px;"></textarea>
+    <label style="display:flex;align-items:center;gap:8px;padding:12px;background:var(--bg);
+      border:1px dashed var(--border);border-radius:8px;cursor:pointer;justify-content:center;
+      color:var(--text-dim);font-size:14px;font-weight:500;">
+      &#128247; Attach Photos
+      <input type="file" id="photo-input" accept="image/*" multiple capture="environment"
+        style="display:none;" onchange="handlePhotos(this)">
+    </label>
+    <div id="photo-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"></div>
+  </div>`;
+
+  return html;
+}
+
+function openAircraft(index) {
+  currentAircraftIndex = index;
+  const ac = AIRCRAFT[index];
+  document.getElementById('entry-title').textContent = ac.name;
+
+  const now = new Date();
+  document.getElementById('entry-timestamp').textContent = now.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }) + ' at ' + now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+
+  document.getElementById('entry-form-fields').innerHTML = buildFormHTML(ac);
+
+  // Reset pending images
+  const existing = sessionData[ac.name];
+  pendingImages = existing ? [...(existing.images || [])] : [];
+  renderPhotoPreview();
+  if (existing) {
+    if (ac.twinEngine) {
+      document.getElementById('oil1').value = existing.oil1.raw;
+      document.getElementById('oil2').value = existing.oil2.raw;
+      liveUpdateQty('oil1'); liveUpdateQty('oil2');
+    } else {
+      document.getElementById('oil').value = existing.oil.raw;
+      liveUpdateQty('oil');
+    }
+    document.getElementById('hyd').value = existing.hydraulic.raw;
+    document.getElementById('tire-nose').value = existing.tires.nose;
+    document.getElementById('tire-left').value = existing.tires.left;
+    document.getElementById('tire-right').value = existing.tires.right;
+    document.getElementById('emer-o2').value = existing.o2;
+    document.getElementById('comments').value = existing.comments || '';
+    liveUpdateQty('hyd');
+    updateTireStatus();
+    updateO2Status();
+  }
+
+  showScreen('entry');
+}
+
+function saveAircraft() {
+  const ac = AIRCRAFT[currentAircraftIndex];
+  const hydRaw = document.getElementById('hyd').value;
+  const hydPct = parseQty(hydRaw);
+  const tireNose = parseFloat(document.getElementById('tire-nose').value);
+  const tireLeft = parseFloat(document.getElementById('tire-left').value);
+  const tireRight = parseFloat(document.getElementById('tire-right').value);
+  const emerO2 = parseFloat(document.getElementById('emer-o2').value);
+
+  const hydPctSafe = isNaN(hydPct) ? null : hydPct;
+  const tireNoseSafe = isNaN(tireNose) ? null : tireNose;
+  const tireLeftSafe = isNaN(tireLeft) ? null : tireLeft;
+  const tireRightSafe = isNaN(tireRight) ? null : tireRight;
+  const emerO2Safe = isNaN(emerO2) ? null : emerO2;
+
+  const comments = (document.getElementById('comments').value || '').trim();
+
+  let entry = {
+    id: Date.now(),
+    aircraft: ac.name,
+    twinEngine: ac.twinEngine,
+    date: new Date().toISOString(),
+    hydraulic: { raw: hydRaw, pct: hydPctSafe },
+    tires: { nose: tireNoseSafe, left: tireLeftSafe, right: tireRightSafe },
+    o2: emerO2Safe,
+    comments: comments,
+    images: [...pendingImages]
+  };
+
+  if (ac.twinEngine) {
+    const o1Raw = document.getElementById('oil1').value;
+    const o2Raw = document.getElementById('oil2').value;
+    const o1Pct = parseQty(o1Raw);
+    const o2Pct = parseQty(o2Raw);
+    entry.oil1 = { raw: o1Raw, pct: isNaN(o1Pct) ? null : o1Pct };
+    entry.oil2 = { raw: o2Raw, pct: isNaN(o2Pct) ? null : o2Pct };
+  } else {
+    const oilRaw = document.getElementById('oil').value;
+    const oilPct = parseQty(oilRaw);
+    entry.oil = { raw: oilRaw, pct: isNaN(oilPct) ? null : oilPct };
+  }
+
+  // Preserve original id and date if editing an existing entry
+  const existing = sessionData[ac.name];
+  if (existing && existing.id) {
+    entry.id = existing.id;
+    entry.date = existing.date;
+    entry.sessionId = existing.sessionId;
+  }
+
+  sessionData[ac.name] = entry;
+  autoSave();
+  goHome();
+}
+
+// --- Review ---
+function showReview() {
+  const now = new Date();
+  document.getElementById('review-timestamp').textContent = now.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+
+  document.getElementById('review-cards').innerHTML = AIRCRAFT.map(ac => {
+    const e = sessionData[ac.name];
+    if (!e) return '';
+
+    let oilRows = '';
+    if (e.twinEngine) {
+      oilRows = `
+        <div class="review-row"><span class="label">Eng 1 Oil</span><span class="value ${pctClass(e.oil1.pct)}">${e.oil1.raw ? e.oil1.raw + ' &rarr; ' : ''}${fmt(e.oil1.pct,'%')}</span></div>
+        <div class="review-row"><span class="label">Eng 2 Oil</span><span class="value ${pctClass(e.oil2.pct)}">${e.oil2.raw ? e.oil2.raw + ' &rarr; ' : ''}${fmt(e.oil2.pct,'%')}</span></div>`;
+    } else {
+      oilRows = `<div class="review-row"><span class="label">Oil</span><span class="value ${pctClass(e.oil.pct)}">${e.oil.raw ? e.oil.raw + ' &rarr; ' : ''}${fmt(e.oil.pct,'%')}</span></div>`;
+    }
+
+    return `<div class="review-card">
+      <h3><span class="dot ${ac.css}"></span>${e.aircraft} <span style="font-weight:400;color:var(--text-dim);font-size:13px;">${ac.tail}</span></h3>
+      ${oilRows}
+      <div class="review-row"><span class="label">Hydraulic</span><span class="value ${pctClass(e.hydraulic.pct)}">${e.hydraulic.raw ? e.hydraulic.raw + ' &rarr; ' : ''}${fmt(e.hydraulic.pct,'%')}</span></div>
+      ${buildTireReviewRows(e, ac)}
+      ${buildO2ReviewRow(e, ac)}
+      ${e.comments ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:13px;color:var(--text-dim);"><strong style="color:var(--text);">Notes:</strong> ${e.comments}</div>` : ''}
+      ${e.images && e.images.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${e.images.map(src => `<img src="${src}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">`).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  showScreen('review');
+}
+
+function buildO2ReviewRow(e, ac) {
+  if (e.o2 == null) return `<div class="review-row"><span class="label">EMERG O2</span><span class="value">\u2014</span></div>`;
+  const o2r = ac.o2Range;
+  const s = o2Status(e.o2, o2r.min, o2r.full);
+  const statusHtml = s.cls ? `<span class="${s.cls}">${s.label}</span>` : '';
+  return `<div class="review-row"><span class="label">EMERG O2</span><span class="value">${e.o2} PSI <span style="font-size:12px;color:var(--text-dim);">(${o2r.min}–${o2r.full})</span> ${statusHtml}</span></div>`;
+}
+
+function buildTireReviewRows(e, ac) {
+  const tr = ac.tireRange;
+  return [['Nose Tire','nose'], ['Left Tire','left'], ['Right Tire','right']].map(([label, key]) => {
+    const val = e.tires[key];
+    if (val == null) return `<div class="review-row"><span class="label">${label}</span><span class="value">\u2014</span></div>`;
+    const range = tr[key];
+    const s = tireStatus(val, range[0], range[1]);
+    const statusHtml = s.label ? `<span class="${s.cls}">${s.label}</span>` : '';
+    return `<div class="review-row"><span class="label">${label}</span><span class="value">${val} PSI <span style="font-size:12px;color:var(--text-dim);">(${range[0]}–${range[1]})</span> ${statusHtml}</span></div>`;
+  }).join('');
+}
+
+function pctClass(pct) { return pct != null && pct >= 75 ? 'color-good' : pct != null && pct >= 50 ? 'color-warn' : pct != null ? 'color-danger' : ''; }
+function fmt(v, suffix) { return v != null ? v + (suffix || '') : '\u2014'; }
+
+function saveAllAndExport() {
+  let history = getHistory();
+  const saved = [];
+  const sid = editingGroupSessionId || Date.now();
+
+  // If editing an existing group, remove old entries first
+  if (editingGroupKey) {
+    history = history.filter(e => getGroupKey(e) !== editingGroupKey);
+  }
+
+  AIRCRAFT.forEach(ac => {
+    if (sessionData[ac.name]) {
+      sessionData[ac.name].sessionId = sid;
+      // Preserve original date if editing, otherwise use now
+      if (!editingGroupKey) sessionData[ac.name].date = new Date().toISOString();
+      history.unshift(sessionData[ac.name]);
+      saved.push(ac.name);
+    }
+  });
+  saveHistory(history);
+  editingGroupKey = null;
+  editingGroupSessionId = null;
+  sessionData = {};
+  autoSave();
+  document.getElementById('success-msg').textContent = saved.length === AIRCRAFT.length
+    ? 'All ' + saved.length + ' aircraft recorded successfully.'
+    : saved.length + ' of ' + AIRCRAFT.length + ' aircraft recorded.';
+  showScreen('success');
+}
+
+// --- History ---
+function showHistory() { currentFilter = 'all'; renderHistory(); showScreen('history'); }
+
+function filterHistory(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === 'All' ? filter === 'all' : b.textContent === filter.replace('Citation ', ''));
+  });
+  renderHistory();
+}
+
+let historyTab = 'reports';
+
+function switchHistoryTab(tab) {
+  historyTab = tab;
+  document.getElementById('tab-reports').style.background = tab === 'reports' ? 'var(--accent)' : 'var(--card)';
+  document.getElementById('tab-reports').style.color = tab === 'reports' ? '#fff' : 'var(--text-dim)';
+  document.getElementById('tab-data').style.background = tab === 'data' ? 'var(--accent)' : 'var(--card)';
+  document.getElementById('tab-data').style.color = tab === 'data' ? '#fff' : 'var(--text-dim)';
+  document.getElementById('reports-container').style.display = tab === 'reports' ? '' : 'none';
+  document.getElementById('data-container').style.display = tab === 'data' ? '' : 'none';
+}
+
+function renderHistory() {
+  renderSavedReports();
+  renderHistoryData();
+}
+
+function renderSavedReports() {
+  const container = document.getElementById('reports-container');
+  const reports = getSavedReports();
+
+  if (!reports.length) {
+    container.innerHTML = '<div class="empty-state">No reports yet.<br>Complete an inspection to generate one.</div>';
+    return;
+  }
+
+  container.innerHTML = reports.map(r => {
+    const d = new Date(r.date);
+    const dateStr = d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+    const timeStr = d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+    return `<div class="history-entry" style="cursor:pointer;" onclick="openSavedReport(${r.id})">
+      <div class="history-date">${dateStr} at ${timeStr}</div>
+      <div class="history-summary" style="font-size:16px;">${r.title}</div>
+      <div class="history-values">${r.count} entries &middot; ${r.aircraft}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+        <span style="font-size:12px;color:var(--accent);font-weight:500;">Tap to view PDF &rarr;</span>
+        <button onclick="event.stopPropagation();deleteSavedReport(${r.id})" style="background:none;border:none;color:var(--danger);font-size:13px;cursor:pointer;padding:4px 8px;">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderHistoryData() {
+  const container = document.getElementById('history-entries');
+  const history = getHistory();
+  const filtered = currentFilter === 'all' ? history : history.filter(e => e.aircraft === currentFilter);
+
+  if (!filtered.length) {
+    container.innerHTML = '<div class="empty-state">No entries yet.<br>Start an inspection to begin.</div>';
+    return;
+  }
+
+  // Group by sessionId (or fall back to date for legacy entries)
+  const groups = {};
+  const groupOrder = [];
+  filtered.forEach(e => {
+    const key = e.sessionId ? 's_' + e.sessionId : 'd_' + new Date(e.date).toLocaleDateString('en-US', { year:'numeric', month:'2-digit', day:'2-digit' });
+    if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+    groups[key].push(e);
+  });
+
+  container.innerHTML = groupOrder.map(groupKey => {
+    const entries = groups[groupKey];
+    const d = new Date(entries[0].date);
+    const dateStr = d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+    const timeStr = d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+    const count = entries.length;
+
+    const summaryLines = entries.map(e => {
+      let oilStr = e.twinEngine ? `E1 ${fmt(e.oil1.pct,'%')} / E2 ${fmt(e.oil2.pct,'%')}` : `Oil ${fmt(e.oil.pct,'%')}`;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+        <div class="history-values" style="margin:0;">
+          <strong style="color:var(--text);">${e.aircraft}</strong> &mdash; ${oilStr} &middot; Hyd ${fmt(e.hydraulic.pct,'%')}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button onclick="event.stopPropagation();editHistoryEntry(${e.id})" style="background:none;border:1px solid var(--border);color:var(--accent);padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;">Edit</button>
+          <button onclick="event.stopPropagation();deleteHistoryEntry(${e.id})" style="background:none;border:1px solid var(--border);color:var(--danger);padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;">Del</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="history-entry">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div class="history-date">${dateStr} at ${timeStr}</div>
+          <div class="history-summary">${count} aircraft inspected</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="exportByGroup('${groupKey}')" style="background:var(--accent);border:none;color:#fff;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;">PDF</button>
+          <button onclick="deleteGroup('${groupKey}')" style="background:none;border:1px solid var(--danger);color:var(--danger);padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer;">Delete</button>
+        </div>
+      </div>
+      ${summaryLines}
+    </div>`;
+  }).join('');
+}
+
+function editHistoryEntry(id) {
+  const history = getHistory();
+  const entry = history.find(e => e.id === id);
+  if (!entry) return;
+
+  // Find the group this entry belongs to
+  const gKey = getGroupKey(entry);
+  const groupEntries = history.filter(e => getGroupKey(e) === gKey);
+
+  // Load all entries from this group into sessionData
+  if (Object.keys(sessionData).length > 0) {
+    if (!confirm('This will replace your current inspection in progress. Continue?')) return;
+  }
+
+  sessionData = {};
+  groupEntries.forEach(e => { sessionData[e.aircraft] = JSON.parse(JSON.stringify(e)); });
+
+  // Track that we're editing this group so save replaces instead of adding
+  editingGroupKey = gKey;
+  editingGroupSessionId = entry.sessionId || null;
+
+  goHome();
+}
+
+function deleteHistoryEntry(id) {
+  if (!confirm('Delete this entry?')) return;
+  const history = getHistory().filter(e => e.id !== id);
+  saveHistory(history);
+  renderHistory();
+}
+
+function getGroupKey(e) {
+  return e.sessionId ? 's_' + e.sessionId : 'd_' + new Date(e.date).toLocaleDateString('en-US', { year:'numeric', month:'2-digit', day:'2-digit' });
+}
+
+function deleteGroup(groupKey) {
+  if (!confirm('Delete all entries for this inspection?')) return;
+  const history = getHistory().filter(e => getGroupKey(e) !== groupKey);
+  saveHistory(history);
+  renderHistory();
+}
+
+function clearAllData() {
+  if (!confirm('Delete ALL inspection data and saved reports? This cannot be undone.')) return;
+  localStorage.removeItem('bmc_hangar_data');
+  localStorage.removeItem('bmc_reports');
+  localStorage.removeItem('bmc_session');
+  localStorage.removeItem('bmc_drafts');
+  sessionData = {};
+  renderHistory();
+  alert('All data cleared.');
+}
+
+function exportByGroup(groupKey) {
+  const history = getHistory();
+  const entries = history.filter(e => getGroupKey(e) === groupKey);
+  if (!entries.length) return;
+  const d = new Date(entries[0].date);
+  const title = 'Inspection: ' + d.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+  generatePDF(title, entries);
+}
+
+// --- PDF ---
+function exportFullPDF() {
+  const history = getHistory();
+  if (!history.length) { alert('No data to export.'); return; }
+  generatePDF('All Aircraft', history);
+}
+
+function exportPDFAll() {
+  const history = getHistory();
+  if (!history.length) { alert('No data to export.'); return; }
+  const filtered = currentFilter === 'all' ? history : history.filter(e => e.aircraft === currentFilter);
+  if (!filtered.length) { alert('No data for this filter.'); return; }
+  generatePDF(currentFilter === 'all' ? 'All Aircraft' : currentFilter, filtered);
+}
+
+function generatePDF(title, entries) {
+  // Tall page so all aircraft fit on one page
+  const pageH = 279;
+  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
+  const w = 216, margin = 16, cw = w - margin * 2;
+  let y = 10;
+  const now = new Date();
+
+  function addPage() { doc.addPage('letter'); y = 16; doc.setFillColor(15,17,23); doc.rect(0,0,w,pageH,'F'); }
+  function checkPage(n) { if (y + n > pageH - 10) addPage(); }
+  function pctColor(v) { return v >= 75 ? [34,197,94] : v >= 50 ? [245,158,11] : [239,68,68]; }
+
+  // Title
+  doc.setFillColor(15,17,23); doc.rect(0,0,w,pageH,'F');
+  doc.setTextColor(228,228,231); doc.setFontSize(22); doc.setFont('helvetica','bold');
+  doc.text('BMC Hangar Report', w/2, 28, {align:'center'});
+  doc.setFontSize(13); doc.setFont('helvetica','normal');
+  doc.text(title, w/2, 38, {align:'center'});
+  // Per-aircraft latest summary — all on one page
+  y = 50;
+  AIRCRAFT.forEach(ac => {
+    const acE = entries.filter(e => e.aircraft === ac.name);
+    if (!acE.length) return;
+    const latest = acE[0];
+
+    // Tail number above aircraft name
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(113,113,122);
+    doc.text(ac.tail, margin, y); y += 7;
+    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(228,228,231);
+    doc.text(ac.name, margin, y); y += 7;
+
+    let rows = [];
+    if (latest.twinEngine) {
+      rows.push(['Eng 1 Oil', latest.oil1.pct != null ? latest.oil1.pct+'%' : '\u2014', latest.oil1.pct != null ? pctColor(latest.oil1.pct) : [113,113,122]]);
+      rows.push(['Eng 2 Oil', latest.oil2.pct != null ? latest.oil2.pct+'%' : '\u2014', latest.oil2.pct != null ? pctColor(latest.oil2.pct) : [113,113,122]]);
+    } else {
+      rows.push(['Oil Level', latest.oil.pct != null ? latest.oil.pct+'%' : '\u2014', latest.oil.pct != null ? pctColor(latest.oil.pct) : [113,113,122]]);
+    }
+    rows.push(['Hydraulic', latest.hydraulic.pct != null ? latest.hydraulic.pct+'%' : '\u2014', latest.hydraulic.pct != null ? pctColor(latest.hydraulic.pct) : [113,113,122]]);
+    doc.setFontSize(10);
+    rows.forEach(([l,v,c]) => {
+      doc.setTextColor(113,113,122); doc.text(l, margin+4, y);
+      doc.setTextColor(...c); doc.text(v, w-margin, y, {align:'right'}); y += 6;
+    });
+
+    // Tire pressures + EMERG O2 with Current / Range / Status
+    const tr = ac.tireRange;
+    const o2r = ac.o2Range;
+    const o2s = o2Status(latest.o2, o2r.min, o2r.full);
+    const rangeRows = [
+      ['Nose Tire', latest.tires.nose, tr.nose[0]+'–'+tr.nose[1]+' PSI', tireStatus(latest.tires.nose, tr.nose[0], tr.nose[1])],
+      ['Left Tire', latest.tires.left, tr.left[0]+'–'+tr.left[1]+' PSI', tireStatus(latest.tires.left, tr.left[0], tr.left[1])],
+      ['Right Tire', latest.tires.right, tr.right[0]+'–'+tr.right[1]+' PSI', tireStatus(latest.tires.right, tr.right[0], tr.right[1])],
+      ['EMERG O2', latest.o2, o2r.min+'–'+o2r.full+' PSI', o2s]
+    ];
+    // Header
+    y += 2;
+    doc.setFontSize(8); doc.setTextColor(113,113,122);
+    const col2 = w - margin - 80, col3 = w - margin - 42, col4 = w - margin;
+    doc.text('Current', col2, y); doc.text('Range', col3, y); doc.text('Status', col4, y, {align:'right'});
+    y += 5;
+    doc.setFontSize(10);
+    rangeRows.forEach(([label, val, rangeStr, s]) => {
+      doc.setTextColor(113,113,122); doc.text(label, margin+4, y);
+      if (val != null) {
+        const statusColor = s.label === 'OK' || s.label === 'GOOD' ? [34,197,94] : s.label === 'LOW' || s.label === 'BELOW MIN' ? [239,68,68] : [245,158,11];
+        doc.setTextColor(228,228,231); doc.text(val + ' PSI', col2, y);
+        doc.setTextColor(113,113,122); doc.text(rangeStr, col3, y);
+        doc.setTextColor(...statusColor); doc.text(s.label, col4, y, {align:'right'});
+      } else {
+        doc.setTextColor(113,113,122); doc.text('\u2014', col2, y);
+      }
+      y += 6;
+    });
+    // Sight gauge note
+    doc.setFontSize(7); doc.setTextColor(113,113,122); doc.setFont('helvetica','italic');
+    doc.text('* Oil & hydraulic from sight gauges — not precisely accurate.', margin+4, y);
+    doc.setFont('helvetica','normal');
+    y += 10;
+
+    y += 4;
+
+    // Separator line between aircraft
+    doc.setDrawColor(39,39,42); doc.setLineWidth(0.2);
+    doc.line(margin, y - 2, w - margin, y - 2);
+    y += 2;
+  });
+
+  // Page 2: Notes (only if any aircraft has comments or images)
+  const notesEntries = [];
+  AIRCRAFT.forEach(ac => {
+    const acE = entries.filter(e => e.aircraft === ac.name);
+    if (!acE.length) return;
+    const latest = acE[0];
+    if ((latest.comments) || (latest.images && latest.images.length)) {
+      notesEntries.push({ ac, latest });
+    }
+  });
+
+  if (notesEntries.length) {
+    addPage();
+    doc.setTextColor(228,228,231); doc.setFontSize(16); doc.setFont('helvetica','bold');
+    doc.text('Notes', margin, y); y += 10;
+
+    notesEntries.forEach(({ ac, latest }) => {
+      checkPage(20);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(113,113,122);
+      doc.text(ac.tail, margin, y); y += 5;
+      doc.setFontSize(12); doc.setTextColor(228,228,231);
+      doc.text(ac.name, margin, y); y += 6;
+
+      if (latest.comments) {
+        doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.setTextColor(228,228,231);
+        const noteLines = doc.splitTextToSize(latest.comments, cw - 4);
+        doc.text(noteLines, margin, y);
+        y += noteLines.length * 5 + 3;
+      }
+
+      if (latest.images && latest.images.length) {
+        latest.images.forEach(img => {
+          checkPage(50);
+          try { doc.addImage(img, 'JPEG', margin, y, cw * 0.4, 40); y += 44; } catch(_){}
+        });
+      }
+
+      y += 6;
+      doc.setDrawColor(39,39,42); doc.setLineWidth(0.2);
+      doc.line(margin, y - 3, w - margin, y - 3);
+    });
+  }
+
+  const fileBase = 'BMC_Hangar_' + title.replace(/\s+/g,'_') + '_' + now.toISOString().slice(0,10);
+
+  // Capture PDF data before saving
+  const pdfDataUrl = doc.output('datauristring');
+  saveReport(fileBase, title, entries, pdfDataUrl);
+
+  // Download PDF via blob (more reliable on iOS)
+  const pdfBlob = doc.output('blob');
+  const pdfUrl = URL.createObjectURL(pdfBlob);
+  const pdfLink = document.createElement('a');
+  pdfLink.href = pdfUrl;
+  pdfLink.download = fileBase + '.pdf';
+  pdfLink.click();
+  setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
+
+  // Upload to Google Drive simultaneously
+  uploadToGDrive(fileBase, pdfBlob);
+
+  generateCSV(fileBase, entries);
+}
+
+function generateCSV(fileBase, entries) {
+  const headers = ['Date','Time','Aircraft','Tail','Oil 1 (%)','Oil 2 (%)','Hydraulic (%)','Nose Tire (PSI)','Left Tire (PSI)','Right Tire (PSI)','Emergency O2 (PSI)','Comments'];
+  const tailMap = {};
+  AIRCRAFT.forEach(ac => tailMap[ac.name] = ac.tail);
+
+  const rows = entries.map(e => {
+    const d = new Date(e.date);
+    const date = d.toLocaleDateString('en-US', {month:'2-digit',day:'2-digit',year:'numeric'});
+    const time = d.toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit'});
+    const oil1 = e.twinEngine ? e.oil1.pct : e.oil.pct;
+    const oil2 = e.twinEngine ? e.oil2.pct : '';
+    const comment = (e.comments || '').replace(/"/g, '""');
+    return [date, time, e.aircraft, tailMap[e.aircraft] || '', oil1, oil2, e.hydraulic.pct, e.tires.nose, e.tires.left, e.tires.right, e.o2, '"' + comment + '"'].join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileBase + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- Saved Reports ---
+function getSavedReports() { return JSON.parse(localStorage.getItem('bmc_reports') || '[]'); }
+function setSavedReports(r) { localStorage.setItem('bmc_reports', JSON.stringify(r)); }
+
+function saveReport(fileBase, title, entries, pdfDataUrl) {
+  const reports = getSavedReports();
+  const now = new Date();
+  const aircraftList = [...new Set(entries.map(e => e.aircraft))].join(', ');
+  reports.unshift({
+    id: Date.now(),
+    filename: fileBase,
+    title: title,
+    date: now.toISOString(),
+    aircraft: aircraftList,
+    count: entries.length,
+    pdf: pdfDataUrl
+  });
+  // Keep max 20 reports to manage storage
+  if (reports.length > 20) reports.length = 20;
+  setSavedReports(reports);
+}
+
+function openSavedReport(id) {
+  const reports = getSavedReports();
+  const report = reports.find(r => r.id === id);
+  if (!report) return;
+  // Open PDF in new tab
+  const win = window.open();
+  if (win) {
+    win.document.write('<html><head><title>' + report.filename + '</title></head><body style="margin:0;"><iframe src="' + report.pdf + '" style="width:100%;height:100%;border:none;"></iframe></body></html>');
+  } else {
+    // Fallback: download
+    const a = document.createElement('a');
+    a.href = report.pdf;
+    a.download = report.filename + '.pdf';
+    a.click();
+  }
+}
+
+function deleteSavedReport(id) {
+  if (!confirm('Delete this report?')) return;
+  const reports = getSavedReports().filter(r => r.id !== id);
+  setSavedReports(reports);
+  renderHistory();
+}
+
+// --- Live Report ---
+function showLiveReport() {
+  const now = new Date();
+  document.getElementById('report-timestamp').textContent = now.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' }) + ' at ' + now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+
+  const doneCount = Object.keys(sessionData).length;
+  document.getElementById('report-save-btn').disabled = doneCount === 0;
+
+  const container = document.getElementById('report-content');
+  container.innerHTML = AIRCRAFT.map(ac => {
+    const e = sessionData[ac.name];
+    const done = !!e;
+    const dotColor = ac.css === 'm2' ? '#3b82f6' : ac.css === 'pc12' ? '#22c55e' : '#f59e0b';
+
+    let body = '';
+    if (done) {
+      let oilMetrics = '';
+      if (e.twinEngine) {
+        oilMetrics = `
+          <div class="report-metric">
+            <div class="report-metric-label">Eng 1 Oil</div>
+            <div class="report-metric-value ${pctClass(e.oil1.pct)}">${e.oil1.pct}%</div>
+            <div class="report-metric-sub">${e.oil1.raw}</div>
+          </div>
+          <div class="report-metric">
+            <div class="report-metric-label">Eng 2 Oil</div>
+            <div class="report-metric-value ${pctClass(e.oil2.pct)}">${e.oil2.pct}%</div>
+            <div class="report-metric-sub">${e.oil2.raw}</div>
+          </div>`;
+      } else {
+        oilMetrics = `
+          <div class="report-metric">
+            <div class="report-metric-label">Oil</div>
+            <div class="report-metric-value ${pctClass(e.oil.pct)}">${e.oil.pct}%</div>
+            <div class="report-metric-sub">${e.oil.raw}</div>
+          </div>`;
+      }
+
+      body = `<div class="report-grid">
+        ${oilMetrics}
+        <div class="report-metric">
+          <div class="report-metric-label">Hydraulic</div>
+          <div class="report-metric-value ${pctClass(e.hydraulic.pct)}">${e.hydraulic.pct}%</div>
+          <div class="report-metric-sub">${e.hydraulic.raw}</div>
+        </div>
+        <div style="grid-column:1/-1;font-size:11px;color:var(--text-dim);font-style:italic;padding:0 2px;">* Oil and hydraulic readings are from sight gauges and are not precisely accurate.</div>
+        <div class="report-metric">
+          <div class="report-metric-label">Nose Tire</div>
+          <div class="report-metric-value sm">${e.tires.nose} <small>PSI</small></div>
+        </div>
+        <div class="report-metric">
+          <div class="report-metric-label">Left Tire</div>
+          <div class="report-metric-value sm">${e.tires.left} <small>PSI</small></div>
+        </div>
+        <div class="report-metric">
+          <div class="report-metric-label">Right Tire</div>
+          <div class="report-metric-value sm">${e.tires.right} <small>PSI</small></div>
+        </div>
+        <div class="report-metric">
+          <div class="report-metric-label">EMERG O2</div>
+          <div class="report-metric-value sm">${e.o2} <small>PSI</small></div>
+        </div>
+      </div>
+      ${e.comments ? `<div style="margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--text-dim);"><strong style="color:var(--text);">Notes:</strong> ${e.comments}</div>` : ''}
+      ${e.images && e.images.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${e.images.map(src => `<img src="${src}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`).join('')}</div>` : ''}`;
+    } else {
+      body = `<div class="report-pending-msg">Not yet inspected</div>`;
+    }
+
+    return `<div class="report-aircraft">
+      <div class="report-aircraft-header">
+        <span class="dot-lg" style="background:${dotColor}"></span>
+        <h3>${ac.name} <span style="font-weight:400;color:var(--text-dim);font-size:14px;">${ac.tail}</span></h3>
+        <span class="badge ${done ? 'badge-done' : 'badge-pending'}">${done ? 'Complete' : 'Pending'}</span>
+      </div>
+      ${body}
+    </div>`;
+  }).join('');
+
+  showScreen('report');
+}
+
+// --- Auto-save session to localStorage ---
+function autoSave() {
+  localStorage.setItem('bmc_session', JSON.stringify(sessionData));
+}
+
+function autoRestore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('bmc_session') || '{}');
+    if (saved && typeof saved === 'object' && Object.keys(saved).length > 0) {
+      sessionData = saved;
+    }
+  } catch(_) {}
+}
+
+// --- Named Drafts ---
+function getDrafts() { return JSON.parse(localStorage.getItem('bmc_drafts') || '[]'); }
+function saveDrafts(drafts) { localStorage.setItem('bmc_drafts', JSON.stringify(drafts)); }
+
+function saveDraft() {
+  const doneCount = Object.keys(sessionData).length;
+  if (doneCount === 0) { alert('No aircraft data to save.'); return; }
+
+  const now = new Date();
+  const label = now.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
+    + ' at ' + now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+
+  const aircraftNames = AIRCRAFT.filter(ac => sessionData[ac.name]).map(ac => ac.name).join(', ');
+
+  const draft = {
+    id: Date.now(),
+    label: label,
+    aircraft: aircraftNames,
+    count: doneCount,
+    data: JSON.parse(JSON.stringify(sessionData))
+  };
+
+  const drafts = getDrafts();
+  drafts.unshift(draft);
+  saveDrafts(drafts);
+
+  alert('Draft saved: ' + label);
+}
+
+function showDrafts() {
+  const drafts = getDrafts();
+  const container = document.getElementById('drafts-list');
+
+  if (!drafts.length) {
+    container.innerHTML = '<div class="empty-state">No saved drafts.<br>Save your progress from the checklist screen.</div>';
+  } else {
+    container.innerHTML = drafts.map(d => {
+      return `<div class="draft-card">
+        <div class="draft-info">
+          <h4>${d.label}</h4>
+          <span>${d.count}/${AIRCRAFT.length} aircraft &middot; ${d.aircraft}</span>
+        </div>
+        <div class="draft-actions">
+          <button class="primary" onclick="resumeDraft(${d.id})">Resume</button>
+          <button class="danger" onclick="deleteDraft(${d.id})">&#10005;</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  showScreen('drafts');
+}
+
+function resumeDraft(id) {
+  const drafts = getDrafts();
+  const draft = drafts.find(d => d.id === id);
+  if (!draft) return;
+
+  if (Object.keys(sessionData).length > 0) {
+    if (!confirm('This will replace your current inspection in progress. Continue?')) return;
+  }
+
+  sessionData = draft.data;
+  autoSave();
+  goHome();
+}
+
+function deleteDraft(id) {
+  if (!confirm('Delete this draft?')) return;
+  const drafts = getDrafts().filter(d => d.id !== id);
+  saveDrafts(drafts);
+  showDrafts();
+}
+
+// --- Google Drive Integration ---
+// *** PASTE YOUR GOOGLE CLIENT ID BELOW ***
+const GDRIVE_CLIENT_ID = '275799301472-cildt11cft839th6jls5pvj8pv26ll89.apps.googleusercontent.com';
+const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+let gdriveAccessToken = null;
+let gdriveTokenClient = null;
+let gdriveFolderId = null;
+let gdriveUserEmail = null;
+
+function initGDrive() {
+  if (typeof google === 'undefined' || !google.accounts) {
+    // GIS not loaded yet, retry
+    setTimeout(initGDrive, 500);
+    return;
+  }
+  gdriveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GDRIVE_CLIENT_ID,
+    scope: GDRIVE_SCOPES,
+    callback: onGDriveToken,
+  });
+  // Check if we have a saved token
+  const saved = localStorage.getItem('bmc_gdrive_token');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed.expiry > Date.now()) {
+        gdriveAccessToken = parsed.token;
+        gdriveUserEmail = parsed.email || '';
+        updateGDriveUI(true);
+        ensureGDriveFolder();
+      }
+    } catch(_) {}
+  }
+}
+
+function handleGDriveClick() {
+  if (gdriveAccessToken) {
+    if (confirm('Disconnect Google Drive?')) {
+      gdriveAccessToken = null;
+      gdriveFolderId = null;
+      gdriveUserEmail = null;
+      localStorage.removeItem('bmc_gdrive_token');
+      google.accounts.oauth2.revoke(gdriveAccessToken);
+      updateGDriveUI(false);
+    }
+    return;
+  }
+  if (GDRIVE_CLIENT_ID.includes('YOUR_CLIENT_ID')) {
+    alert('Google Drive not configured yet.\n\nSee setup instructions in the source code.');
+    return;
+  }
+  gdriveTokenClient.requestAccessToken();
+}
+
+async function onGDriveToken(resp) {
+  if (resp.error) { console.error('GDrive auth error', resp); return; }
+  gdriveAccessToken = resp.access_token;
+  // Get user email
+  try {
+    const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+    const info = await r.json();
+    gdriveUserEmail = info.email || '';
+  } catch(_) { gdriveUserEmail = ''; }
+  // Save token with expiry
+  localStorage.setItem('bmc_gdrive_token', JSON.stringify({
+    token: gdriveAccessToken,
+    email: gdriveUserEmail,
+    expiry: Date.now() + (resp.expires_in * 1000)
+  }));
+  updateGDriveUI(true);
+  await ensureGDriveFolder();
+}
+
+function updateGDriveUI(connected) {
+  const btn = document.getElementById('gdrive-btn');
+  const label = document.getElementById('gdrive-label');
+  if (connected) {
+    btn.classList.add('connected');
+    label.textContent = gdriveUserEmail ? 'Drive: ' + gdriveUserEmail : 'Google Drive Connected';
+  } else {
+    btn.classList.remove('connected');
+    label.textContent = 'Connect Google Drive';
+  }
+}
+
+async function ensureGDriveFolder() {
+  if (!gdriveAccessToken) return null;
+  // Search for existing folder
+  try {
+    const q = encodeURIComponent("name='BMC Hangar Reports' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+    const r = await fetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name)', {
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+    const data = await r.json();
+    if (data.files && data.files.length > 0) {
+      gdriveFolderId = data.files[0].id;
+      return gdriveFolderId;
+    }
+  } catch(_) {}
+  // Create folder
+  try {
+    const r = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + gdriveAccessToken,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: 'BMC Hangar Reports',
+        mimeType: 'application/vnd.google-apps.folder'
+      })
+    });
+    const data = await r.json();
+    gdriveFolderId = data.id;
+    return gdriveFolderId;
+  } catch(e) { console.error('Failed to create Drive folder', e); return null; }
+}
+
+function showGDriveStatus(msg, cls) {
+  const el = document.getElementById('gdrive-status');
+  el.textContent = msg;
+  el.className = 'gdrive-upload-status ' + cls;
+  if (cls === 'success') setTimeout(() => { el.className = 'gdrive-upload-status'; }, 4000);
+}
+
+async function uploadToGDrive(filename, pdfBlob) {
+  if (!gdriveAccessToken) return;
+  showGDriveStatus('Uploading to Google Drive...', 'uploading');
+  try {
+    if (!gdriveFolderId) await ensureGDriveFolder();
+    if (!gdriveFolderId) throw new Error('No folder');
+
+    const metadata = {
+      name: filename + '.pdf',
+      mimeType: 'application/pdf',
+      parents: [gdriveFolderId]
+    };
+
+    // Multipart upload
+    const boundary = 'bmc_boundary_' + Date.now();
+    const delimiter = '\r\n--' + boundary + '\r\n';
+    const closeDelimiter = '\r\n--' + boundary + '--';
+
+    const metaPart = delimiter +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata);
+
+    const arrayBuf = await pdfBlob.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuf);
+
+    // Build multipart body
+    const encoder = new TextEncoder();
+    const metaBytes = encoder.encode(metaPart + delimiter + 'Content-Type: application/pdf\r\nContent-Transfer-Encoding: binary\r\n\r\n');
+    const closeBytes = encoder.encode(closeDelimiter);
+
+    const body = new Uint8Array(metaBytes.length + uint8.length + closeBytes.length);
+    body.set(metaBytes, 0);
+    body.set(uint8, metaBytes.length);
+    body.set(closeBytes, metaBytes.length + uint8.length);
+
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + gdriveAccessToken,
+        'Content-Type': 'multipart/related; boundary=' + boundary,
+      },
+      body: body
+    });
+
+    if (!r.ok) {
+      const errText = await r.text();
+      // Token might be expired
+      if (r.status === 401) {
+        gdriveAccessToken = null;
+        localStorage.removeItem('bmc_gdrive_token');
+        updateGDriveUI(false);
+        showGDriveStatus('Drive session expired — reconnect to upload', 'error');
+        return;
+      }
+      throw new Error(errText);
+    }
+
+    const result = await r.json();
+    showGDriveStatus('Saved to Google Drive: ' + filename + '.pdf', 'success');
+    return result;
+  } catch(e) {
+    console.error('Drive upload failed', e);
+    showGDriveStatus('Drive upload failed — PDF still downloaded locally', 'error');
+  }
+}
+
+// Init
+autoRestore();
+renderChecklist();
+initGDrive();
+</script>
+</body>
+</html>
