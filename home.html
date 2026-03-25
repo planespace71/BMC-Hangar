@@ -372,6 +372,7 @@ const AIRCRAFT = [
 
 let sessionData = {};
 let lastExportSessionId = null;
+let lastSavedEntries = [];
 let currentAircraftIndex = -1;
 let currentFilter = 'all';
 let editingGroupKey = null; // set when editing a whole inspection group
@@ -815,6 +816,7 @@ function saveAllAndExport() {
     history = history.filter(e => getGroupKey(e) !== editingGroupKey);
   }
 
+  lastSavedEntries = [];
   AIRCRAFT.forEach(ac => {
     if (sessionData[ac.name]) {
       sessionData[ac.name].sessionId = sid;
@@ -822,10 +824,10 @@ function saveAllAndExport() {
       if (!editingGroupKey) sessionData[ac.name].date = new Date().toISOString();
       history.unshift(sessionData[ac.name]);
       saved.push(ac.name);
+      lastSavedEntries.push(JSON.parse(JSON.stringify(sessionData[ac.name])));
     }
   });
   saveHistory(history);
-  // Store the session ID so the success screen can export just this inspection
   lastExportSessionId = sid;
   editingGroupKey = null;
   editingGroupSessionId = null;
@@ -1037,20 +1039,18 @@ function exportByGroup(groupKey) {
 
 // --- PDF ---
 function exportFullPDF() {
-  const history = getHistory();
-  if (!history.length) { alert('No data to export.'); return; }
-  // If called right after saving, only export that inspection's entries
   const now = new Date();
   const dateTitle = now.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' })
     + ' at ' + now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
-  if (lastExportSessionId) {
-    const sessionEntries = history.filter(e => e.sessionId === lastExportSessionId);
-    if (sessionEntries.length) {
-      generatePDF(dateTitle, sessionEntries);
-      lastExportSessionId = null;
-      return;
-    }
+  // If called right after saving, only export that inspection's entries
+  if (lastSavedEntries.length) {
+    const entries = lastSavedEntries;
+    lastSavedEntries = [];
+    generatePDF(dateTitle, entries);
+    return;
   }
+  const history = getHistory();
+  if (!history.length) { alert('No data to export.'); return; }
   generatePDF(dateTitle, history);
 }
 
