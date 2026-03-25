@@ -1415,7 +1415,7 @@ function deleteDraft(id) {
 // --- Google Drive Integration ---
 // *** PASTE YOUR GOOGLE CLIENT ID BELOW ***
 const GDRIVE_CLIENT_ID = '275799301472-cildt11cft839th6jls5pvj8pv26ll89.apps.googleusercontent.com';
-const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file email';
 
 let gdriveAccessToken = null;
 let gdriveTokenClient = null;
@@ -1468,7 +1468,8 @@ function handleGDriveClick() {
 }
 
 async function onGDriveToken(resp) {
-  if (resp.error) { console.error('GDrive auth error', resp); return; }
+  console.log('GDrive token response:', JSON.stringify(resp));
+  if (resp.error) { console.error('GDrive auth error', resp); alert('Google sign-in failed: ' + resp.error); return; }
   gdriveAccessToken = resp.access_token;
   // Get user email
   try {
