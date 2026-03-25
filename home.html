@@ -371,6 +371,7 @@ const AIRCRAFT = [
 ];
 
 let sessionData = {};
+let lastExportSessionId = null;
 let currentAircraftIndex = -1;
 let currentFilter = 'all';
 let editingGroupKey = null; // set when editing a whole inspection group
@@ -824,6 +825,8 @@ function saveAllAndExport() {
     }
   });
   saveHistory(history);
+  // Store the session ID so the success screen can export just this inspection
+  lastExportSessionId = sid;
   editingGroupKey = null;
   editingGroupSessionId = null;
   sessionData = {};
@@ -1036,6 +1039,17 @@ function exportByGroup(groupKey) {
 function exportFullPDF() {
   const history = getHistory();
   if (!history.length) { alert('No data to export.'); return; }
+  // If called right after saving, only export that inspection's entries
+  if (lastExportSessionId) {
+    const sessionEntries = history.filter(e => e.sessionId === lastExportSessionId);
+    if (sessionEntries.length) {
+      const acNames = [...new Set(sessionEntries.map(e => e.aircraft))];
+      const title = acNames.length === AIRCRAFT.length ? 'All Aircraft' : acNames.join(', ');
+      generatePDF(title, sessionEntries);
+      lastExportSessionId = null;
+      return;
+    }
+  }
   generatePDF('All Aircraft', history);
 }
 
