@@ -1004,6 +1004,16 @@ function deleteGroup(groupKey) {
 
 function clearAllData() {
   if (!confirm('Delete ALL inspection data and saved reports? This cannot be undone.')) return;
+  // Delete all Drive PDFs
+  cloudReports.forEach(r => {
+    if (r.driveFileId) deleteFromDrive(r.driveFileId);
+  });
+  cloudReports = [];
+  cloudDrafts = [];
+  // Clear cloud index files
+  clearCloudFile(cloudIndexFileId).then(() => { cloudIndexFileId = null; });
+  clearCloudFile(cloudDraftsFileId).then(() => { cloudDraftsFileId = null; });
+  // Clear local
   localStorage.removeItem('bmc_hangar_data');
   localStorage.removeItem('bmc_reports');
   localStorage.removeItem('bmc_session');
@@ -1266,8 +1276,17 @@ function openSavedReport(id, driveFileId) {
 
 function deleteSavedReport(id) {
   if (!confirm('Delete this report?')) return;
+  // Find the cloud report to delete its Drive PDF
+  const cloudReport = cloudReports.find(r => r.id === id);
+  if (cloudReport && cloudReport.driveFileId) {
+    deleteFromDrive(cloudReport.driveFileId);
+  }
+  // Remove from local
   const reports = getSavedReports().filter(r => r.id !== id);
   setSavedReports(reports);
+  // Remove from cloud index
+  cloudReports = cloudReports.filter(r => r.id !== id);
+  updateCloudIndexAfterDelete();
   renderHistory();
 }
 
@@ -1854,6 +1873,34 @@ async function loadCloudDraftsThenRender() {
     cloudDrafts = drafts;
     renderDraftsList(); // Re-render with cloud data merged in
   } catch(e) { console.error('Failed to load cloud drafts', e); }
+}
+
+// --- Drive Delete Helpers ---
+async function deleteFromDrive(fileId) {
+  if (!gdriveAccessToken || !fileId) return;
+  try {
+    await fetch('https://www.googleapis.com/drive/v3/files/' + fileId, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+  } catch(e) { console.error('Failed to delete Drive file', e); }
+}
+
+async function clearCloudFile(fileId) {
+  if (!gdriveAccessToken || !fileId) return;
+  try {
+    await fetch('https://www.googleapis.com/drive/v3/files/' + fileId, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+  } catch(e) { console.error('Failed to delete cloud index file', e); }
+}
+
+async function updateCloudIndexAfterDelete() {
+  if (!gdriveAccessToken) return;
+  try {
+    await writeCloudIndex(cloudReports);
+  } catch(e) { console.error('Failed to update cloud index after delete', e); }
 }
 
 // Init
