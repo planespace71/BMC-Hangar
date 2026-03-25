@@ -835,7 +835,7 @@ function saveAllAndExport() {
 }
 
 // --- History ---
-function showHistory() { currentFilter = 'all'; renderHistory(); showScreen('history'); }
+function showHistory() { currentFilter = 'all'; loadCloudReportsThenRender(); showScreen('history'); }
 
 function filterHistory(filter) {
   currentFilter = filter;
@@ -862,21 +862,39 @@ function renderHistory() {
   renderHistoryData();
 }
 
+let cloudReports = [];
+
 function renderSavedReports() {
   const container = document.getElementById('reports-container');
-  const reports = getSavedReports();
+  const localReports = getSavedReports().map(r => ({ ...r, source: 'local' }));
+  const cloud = cloudReports.map(r => ({ ...r, source: 'cloud' }));
 
-  if (!reports.length) {
+  // Merge: deduplicate by filename, prefer cloud version
+  const seen = new Set();
+  const merged = [];
+  [...cloud, ...localReports].forEach(r => {
+    if (!seen.has(r.filename)) {
+      seen.add(r.filename);
+      merged.push(r);
+    }
+  });
+  // Sort newest first
+  merged.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  if (!merged.length) {
     container.innerHTML = '<div class="empty-state">No reports yet.<br>Complete an inspection to generate one.</div>';
     return;
   }
 
-  container.innerHTML = reports.map(r => {
+  container.innerHTML = merged.map(r => {
     const d = new Date(r.date);
     const dateStr = d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
     const timeStr = d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
-    return `<div class="history-entry" style="cursor:pointer;" onclick="openSavedReport(${r.id})">
-      <div class="history-date">${dateStr} at ${timeStr}</div>
+    const cloudBadge = r.driveFileId ? '<span style="font-size:11px;color:var(--success);margin-left:6px;">&#9729; Drive</span>' : '';
+    const localBadge = r.source === 'local' && r.pdf ? '<span style="font-size:11px;color:var(--text-dim);margin-left:6px;">Local</span>' : '';
+    const escapedId = r.driveFileId ? "'" + r.driveFileId + "'" : 'null';
+    return `<div class="history-entry" style="cursor:pointer;" onclick="openSavedReport(${r.id}, ${escapedId})">
+      <div class="history-date">${dateStr} at ${timeStr}${cloudBadge}${localBadge}</div>
       <div class="history-summary" style="font-size:16px;">${r.title}</div>
       <div class="history-values">${r.count} entries &middot; ${r.aircraft}</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
@@ -1166,7 +1184,7 @@ function generatePDF(title, entries) {
   setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
 
   // Upload to Google Drive simultaneously
-  uploadToGDrive(fileBase, pdfBlob);
+  uploadToGDrive(fileBase, pdfBlob, title, entries);
 
   generateCSV(fileBase, entries);
 }
@@ -1218,16 +1236,26 @@ function saveReport(fileBase, title, entries, pdfDataUrl) {
   setSavedReports(reports);
 }
 
-function openSavedReport(id) {
+function openSavedReport(id, driveFileId) {
+  // If we have a Drive file, open it via Google Drive viewer
+  if (driveFileId && gdriveAccessToken) {
+    window.open('https://drive.google.com/file/d/' + driveFileId + '/view', '_blank');
+    return;
+  }
+  // Fallback to local PDF data
   const reports = getSavedReports();
   const report = reports.find(r => r.id === id);
-  if (!report) return;
-  // Open PDF in new tab
+  if (!report) {
+    // Try cloud reports
+    if (driveFileId) {
+      window.open('https://drive.google.com/file/d/' + driveFileId + '/view', '_blank');
+    }
+    return;
+  }
   const win = window.open();
   if (win) {
     win.document.write('<html><head><title>' + report.filename + '</title></head><body style="margin:0;"><iframe src="' + report.pdf + '" style="width:100%;height:100%;border:none;"></iframe></body></html>');
   } else {
-    // Fallback: download
     const a = document.createElement('a');
     a.href = report.pdf;
     a.download = report.filename + '.pdf';
@@ -1541,7 +1569,7 @@ function showGDriveStatus(msg, cls) {
   if (cls === 'success') setTimeout(() => { el.className = 'gdrive-upload-status'; }, 4000);
 }
 
-async function uploadToGDrive(filename, pdfBlob) {
+async function uploadToGDrive(filename, pdfBlob, title, entries) {
   if (!gdriveAccessToken) return;
   showGDriveStatus('Uploading to Google Drive...', 'uploading');
   try {
@@ -1599,12 +1627,113 @@ async function uploadToGDrive(filename, pdfBlob) {
     }
 
     const result = await r.json();
+    // Add to cloud index
+    await addToCloudIndex(filename, title, entries, result.id);
     showGDriveStatus('Saved to Google Drive: ' + filename + '.pdf', 'success');
     return result;
   } catch(e) {
     console.error('Drive upload failed', e);
     showGDriveStatus('Drive upload failed — PDF still downloaded locally', 'error');
   }
+}
+
+// --- Cloud Reports Index (reports_index.json in Drive) ---
+let cloudIndexFileId = null;
+
+async function findCloudIndex() {
+  if (!gdriveAccessToken || !gdriveFolderId) return null;
+  try {
+    const q = encodeURIComponent("name='reports_index.json' and '" + gdriveFolderId + "' in parents and trashed=false");
+    const r = await fetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)', {
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+    const data = await r.json();
+    if (data.files && data.files.length > 0) {
+      cloudIndexFileId = data.files[0].id;
+      return cloudIndexFileId;
+    }
+  } catch(_) {}
+  return null;
+}
+
+async function readCloudIndex() {
+  if (!gdriveAccessToken) return [];
+  try {
+    if (!gdriveFolderId) await ensureGDriveFolder();
+    if (!cloudIndexFileId) await findCloudIndex();
+    if (!cloudIndexFileId) return [];
+    const r = await fetch('https://www.googleapis.com/drive/v3/files/' + cloudIndexFileId + '?alt=media', {
+      headers: { Authorization: 'Bearer ' + gdriveAccessToken }
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  } catch(_) { return []; }
+}
+
+async function writeCloudIndex(reports) {
+  if (!gdriveAccessToken || !gdriveFolderId) return;
+  const jsonBlob = new Blob([JSON.stringify(reports, null, 2)], { type: 'application/json' });
+
+  if (cloudIndexFileId) {
+    // Update existing file
+    await fetch('https://www.googleapis.com/upload/drive/v3/files/' + cloudIndexFileId + '?uploadType=media', {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer ' + gdriveAccessToken,
+        'Content-Type': 'application/json'
+      },
+      body: jsonBlob
+    });
+  } else {
+    // Create new file
+    const metadata = { name: 'reports_index.json', parents: [gdriveFolderId], mimeType: 'application/json' };
+    const boundary = 'idx_boundary_' + Date.now();
+    const delimiter = '\r\n--' + boundary + '\r\n';
+    const closeDelimiter = '\r\n--' + boundary + '--';
+    const bodyText = delimiter + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata) +
+      delimiter + 'Content-Type: application/json\r\n\r\n' + JSON.stringify(reports, null, 2) + closeDelimiter;
+    const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + gdriveAccessToken,
+        'Content-Type': 'multipart/related; boundary=' + boundary
+      },
+      body: bodyText
+    });
+    const result = await r.json();
+    cloudIndexFileId = result.id;
+  }
+}
+
+async function addToCloudIndex(filename, title, entries, driveFileId) {
+  try {
+    const existing = await readCloudIndex();
+    const aircraftList = [...new Set(entries.map(e => e.aircraft))].join(', ');
+    existing.unshift({
+      id: Date.now(),
+      filename: filename,
+      title: title,
+      date: new Date().toISOString(),
+      aircraft: aircraftList,
+      count: entries.length,
+      driveFileId: driveFileId
+    });
+    // Keep max 50 reports
+    if (existing.length > 50) existing.length = 50;
+    await writeCloudIndex(existing);
+  } catch(e) { console.error('Failed to update cloud index', e); }
+}
+
+async function loadCloudReportsThenRender() {
+  renderHistory(); // Render local data immediately
+  if (!gdriveAccessToken) return;
+  try {
+    if (!gdriveFolderId) await ensureGDriveFolder();
+    const reports = await readCloudIndex();
+    cloudReports = reports;
+    renderSavedReports(); // Re-render with cloud data merged in
+  } catch(e) { console.error('Failed to load cloud reports', e); }
 }
 
 // Init
