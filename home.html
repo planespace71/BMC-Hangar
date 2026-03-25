@@ -1184,23 +1184,39 @@ function generatePDF(title, entries) {
   const pdfDataUrl = doc.output('datauristring');
   saveReport(fileBase, title, entries, pdfDataUrl);
 
-  // Download PDF via blob (more reliable on iOS)
+  // Download PDF
   const pdfBlob = doc.output('blob');
-  const pdfUrl = URL.createObjectURL(pdfBlob);
-  const pdfLink = document.createElement('a');
-  pdfLink.href = pdfUrl;
-  pdfLink.download = fileBase + '.pdf';
-  pdfLink.click();
-  setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
+  const pdfFile = new File([pdfBlob], fileBase + '.pdf', { type: 'application/pdf' });
+  const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+
+  if (isStandalone && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+    // iOS home screen app: use Share API for PDF
+    navigator.share({ files: [pdfFile], title: fileBase }).catch(() => {});
+    // CSV via share after a delay
+    setTimeout(() => {
+      const csvBlob = generateCSVBlob(fileBase, entries);
+      const csvFile = new File([csvBlob], fileBase + '.csv', { type: 'text/csv' });
+      if (navigator.canShare({ files: [csvFile] })) {
+        navigator.share({ files: [csvFile], title: fileBase + ' CSV' }).catch(() => {});
+      }
+    }, 1500);
+  } else {
+    // Regular browser: download normally
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+    const pdfLink = document.createElement('a');
+    pdfLink.href = pdfUrl;
+    pdfLink.download = fileBase + '.pdf';
+    pdfLink.click();
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
+    // Delay CSV so iOS Safari doesn't skip the PDF download
+    setTimeout(() => downloadCSV(fileBase, entries), 1500);
+  }
 
   // Upload to Google Drive simultaneously
   uploadToGDrive(fileBase, pdfBlob, title, entries);
-
-  // Delay CSV so iOS doesn't skip the PDF download
-  setTimeout(() => generateCSV(fileBase, entries), 1500);
 }
 
-function generateCSV(fileBase, entries) {
+function generateCSVBlob(fileBase, entries) {
   const headers = ['Date','Time','Aircraft','Tail','Oil 1 (%)','Oil 2 (%)','Hydraulic (%)','Nose Tire (PSI)','Left Tire (PSI)','Right Tire (PSI)','Emergency O2 (PSI)','Comments'];
   const tailMap = {};
   AIRCRAFT.forEach(ac => tailMap[ac.name] = ac.tail);
@@ -1216,7 +1232,11 @@ function generateCSV(fileBase, entries) {
   });
 
   const csv = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  return new Blob([csv], { type: 'text/csv' });
+}
+
+function downloadCSV(fileBase, entries) {
+  const blob = generateCSVBlob(fileBase, entries);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
