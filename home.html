@@ -1186,7 +1186,8 @@ function generatePDF(title, entries) {
   // Upload to Google Drive simultaneously
   uploadToGDrive(fileBase, pdfBlob, title, entries);
 
-  generateCSV(fileBase, entries);
+  // Delay CSV so iOS doesn't skip the PDF download
+  setTimeout(() => generateCSV(fileBase, entries), 1500);
 }
 
 function generateCSV(fileBase, entries) {
